@@ -102,18 +102,18 @@ contract IDOMaster is Ownable {
         );
 
         uint256 amountToLottery = _maxStakeTokens.mul(10000 - royalPercent.add(divinePercent)).div(10000);
-        uint256 lotteryId = lotteryFactory.startLottery(
-            address(idoPool),
-            _rewardToken,
-            amountToLottery,
-            _startClaimTimestamp,
-            basicMultiplier,
-            premiumMultiplier,
-            eliteMultiplier,
-            0 // lottery fee from thereum
-        );
+        // uint256 lotteryId = lotteryFactory.startLottery(
+        //     address(idoPool),
+        //     _rewardToken,
+        //     amountToLottery,
+        //     _startClaimTimestamp,
+        //     basicMultiplier,
+        //     premiumMultiplier,
+        //     eliteMultiplier,
+        //     0 // lottery fee from thereum
+        // );
 
-        pool2Lottery[address(idoPool)] = lotteryId;
+        // pool2Lottery[address(idoPool)] = lotteryId;
 
         emit IDOCreated(
             msg.sender,
