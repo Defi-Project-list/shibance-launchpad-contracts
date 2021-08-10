@@ -82,7 +82,7 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
         uint256[] memory finalNumbers = new uint256[](length);
 
         for (uint256 i = 0; i < length; i++) {
-            randomGenerator.getRandomNumber();
+            randomGenerator.getRandomNumber(i);
             uint32 finalNumber = randomGenerator.viewRandomResult32();
             finalNumbers[i] = finalNumber;
 

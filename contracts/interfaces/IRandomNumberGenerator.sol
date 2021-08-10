@@ -6,7 +6,7 @@ interface IRandomNumberGenerator {
     /**
      * Requests randomness
      */
-    function getRandomNumber() external;
+    function getRandomNumber(uint256 _seed) external;
 
     /**
      * Views random result(uint256)
