@@ -12,8 +12,9 @@ async function mergeContract(contractFile) {
 }
 
 async function main() {
-    await mergeContract("./contracts/ShibanceLotteryFactory.sol");
-    await mergeContract("./contracts/IDOMaster.sol");
-    await mergeContract("./contracts/IDOPool.sol");
+    await mergeContract("./contracts/RandomGenerator.sol");
+    await mergeContract("./contracts/ShibanceLottery.sol");
+    // await mergeContract("./contracts/IDOMaster.sol");
+    // await mergeContract("./contracts/IDOPool.sol");
 }
 main();
