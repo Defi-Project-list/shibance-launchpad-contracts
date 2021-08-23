@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import './interfaces/IShibanceLotteryFactory.sol';
 import "./interfaces/IRandomNumberGenerator.sol";
+import "./libraries/Utils.sol";
 
 contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Ownable {
     using SafeMath for uint256;
@@ -67,7 +68,8 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
         onlyOperator
         returns (
             address[] memory,   // winner address
-            uint256[] memory    // number of winning times
+            uint256[] memory,    // number of winning times per address
+            uint256              // number of winning times without duplication
         )
     {
         require(isLotteryEnabled, "Lottery not enabled");
@@ -81,9 +83,17 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
         uint256[] memory winTimes = new uint256[](length);
         uint256[] memory finalNumbers = new uint256[](length);
 
+        uint256 winTimesWithout = 0;
+
+        randomGenerator.getRandomNumber(block.timestamp);
+        uint256 seed = randomGenerator.viewRandomResult32();
+
         for (uint256 i = 0; i < length; i++) {
-            randomGenerator.getRandomNumber(i);
-            uint32 finalNumber = randomGenerator.viewRandomResult32();
+            uint32 finalNumber = uint32(Utils.random(
+                1000000,
+                1999999,
+                uint256(keccak256(abi.encodePacked(seed, uint256(uint160(_users[i])))))
+            ));
             finalNumbers[i] = finalNumber;
 
             emit RandomGenerated(finalNumber);
@@ -98,6 +108,7 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
                             break;
                         }
                     }
+                    winTimesWithout++;
                     winTimes[k]++;
                     winners[k] = _users[j];
                     break;
@@ -113,7 +124,7 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
             winTimes
         );
 
-        return (winners, winTimes);
+        return (winners, winTimes, winTimesWithout);
     }
 
     /**

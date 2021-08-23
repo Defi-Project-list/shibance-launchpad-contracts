@@ -16,6 +16,7 @@ interface IShibanceLotteryFactory {
         uint256 _numberOfWinners
     ) external returns (
         address[] memory,   // winner address
-        uint256[] memory    // number of winning times
+        uint256[] memory,   // number of winning times per address
+        uint256             // number of winning times without duplication
     );
 }
