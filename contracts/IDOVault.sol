@@ -24,6 +24,7 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
     uint256 unlockTime; // end time to be available to unstake
   }
 
+  IERC20 public immutable token; // WOOF token
   IERC20 public immutable receiptToken; // DoggyPound token
 
   IMasterBoi public immutable masterBoi;
@@ -43,6 +44,8 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
   event Stake(address indexed user, uint256 amount, uint256 shares, uint256 lastDepositedTime, uint256 lockTime, uint256 unlockTime);
   event Unstake(address indexed user, uint256 amount, uint256 shares, uint256 leftShares);
   event Restake(address indexed user, uint256 unlockTime);
+  event Pause();
+  event Unpause();
 
   modifier onlyAdmin() {
     require(msg.sender == admin, "Admin is required");
@@ -57,6 +60,7 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
   modifier notContract() {
     require(!_isContract(msg.sender), "Contract not allowed");
     require(msg.sender == tx.origin, "Proxy contract not allowed");
+    _;
   }
   
   constructor (IERC20 _token,
@@ -120,7 +124,7 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
     // Weeks locked is a continuous number, calculated as unstake date minus current date, divided by 52
     // refer: https://github.com/abdk-consulting/abdk-libraries-solidity
     uint256 weeksLocks = (user.unlockTime - user.lockTime) / (1 days) / 52;
-    user.xWOOF = pow7(1024, weeksLocked);
+    user.xWOOF = pow7(1024, weeksLocks);
 
     _earn();
 
@@ -153,20 +157,20 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
       uint256 balAfter = available();
       uint256 diff = balAfter.sub(bal);
       if (diff < balWithdraw) {
-          currentAmount = bal.add(diff);
+        currentAmount = bal.add(diff);
       }
     }
 
     if (unstakeFee > 0) {
-        uint256 currentWithdrawFee = currentAmount.mul(unstakeFee).div(10000);
-        token.safeTransfer(treasury, currentWithdrawFee);
-        currentAmount = currentAmount.sub(currentWithdrawFee);
+      uint256 currentWithdrawFee = currentAmount.mul(unstakeFee).div(10000);
+      token.safeTransfer(treasury, currentWithdrawFee);
+      currentAmount = currentAmount.sub(currentWithdrawFee);
     }
 
     if (user.shares > 0) {
-        user.cakeAtLastUserAction = user.shares.mul(balanceOf()).div(totalShares);
+      user.cakeAtLastUserAction = user.shares.mul(balanceOf()).div(totalShares);
     } else { // withdraw all
-        user.cakeAtLastUserAction = 0;
+      user.cakeAtLastUserAction = 0;
     }
 
     user.lastUserActionTime = block.timestamp;
@@ -251,15 +255,16 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
     unstakeFee = _fee;
   }
 
-  function getStakeAmount() external view returns (uint256) {
+  function getStakeAmount() public view returns (uint256) {
     UserInfo storage user = userInfo[msg.sender];
-    return user.shares * getpricePerFullShare();
+    // uint256 pricePerFullShare = totalShares == 0 ? 1e18 : balanceOf().mul(1e18).div(totalShares);
+    return user.shares * getPricePerFullShare();
   }
 
   /**
    * @notice Calculate the price per shares
    */
-  function getPricePerFullShare() external view returns (uint256) {
+  function getPricePerFullShare() public view returns (uint256) {
     return totalShares == 0 ? 1e18 : balanceOf().mul(1e18).div(totalShares);
   }
 
@@ -288,6 +293,30 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
     if (bal > 0) {
       IMasterBoi(masterBoi).enterStaking(bal);
     }
+  }
+
+  function getUsers() public view returns (address[] memory) {
+    return users;
+  }
+
+  function getUserInfo(address _user) public view returns (
+    uint256 shares,
+    uint256 xWOOF,
+    uint256 lastDepositedTime,
+    uint256 cakeAtLastUserAction,
+    uint256 lastUserActionTime,
+    uint256 lockTime,
+    uint256 unlockTime
+  ) {
+    return (
+      userInfo[_user].shares,
+      userInfo[_user].xWOOF,
+      userInfo[_user].lastDepositedTime,
+      userInfo[_user].cakeAtLastUserAction,
+      userInfo[_user].lastUserActionTime,
+      userInfo[_user].lockTime,
+      userInfo[_user].unlockTime
+    );
   }
 
   /**

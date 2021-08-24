@@ -88,33 +88,34 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
         randomGenerator.getRandomNumber(block.timestamp);
         uint256 seed = randomGenerator.viewRandomResult32();
 
-        for (uint256 i = 0; i < length; i++) {
-            uint32 finalNumber = uint32(Utils.random(
-                1000000,
-                1999999,
-                uint256(keccak256(abi.encodePacked(seed, uint256(uint160(_users[i])))))
-            ));
-            finalNumbers[i] = finalNumber;
+        // for (uint256 i = 0; i < length; i++) {
+        //     address addr = _users[i];
+        //     uint32 finalNumber = uint32(Utils.random(
+        //         1000000,
+        //         1999999,
+        //         uint256(keccak256(abi.encodePacked(seed, uint256(uint160(addr)))))
+        //     ));
+        //     finalNumbers[i] = finalNumber;
 
-            emit RandomGenerated(finalNumber);
+        //     emit RandomGenerated(finalNumber);
 
-            for (uint256 j = 0; j < _users.length; j++) {
-                require(_ticketNumbers[j] >= 1000000 && _ticketNumbers[j] <= 1999999, "Ticket number overflow");
-                if (_ticketNumbers[j] == finalNumber) {
-                    // if matched ticket number, will count it against user address
-                    uint256 k = 0;
-                    for (k = 0; k < i; k++) {
-                        if (winners[k] == _users[j]) {
-                            break;
-                        }
-                    }
-                    winTimesWithout++;
-                    winTimes[k]++;
-                    winners[k] = _users[j];
-                    break;
-                }
-            }
-        }
+        //     for (uint256 j = 0; j < _users.length; j++) {
+        //         require(_ticketNumbers[j] >= 1000000 && _ticketNumbers[j] <= 1999999, "Ticket number overflow");
+        //         if (_ticketNumbers[j] == finalNumber) {
+        //             // if matched ticket number, will count it against user address
+        //             uint256 k = 0;
+        //             for (k = 0; k < i; k++) {
+        //                 if (winners[k] == _users[j]) {
+        //                     break;
+        //                 }
+        //             }
+        //             winTimesWithout++;
+        //             winTimes[k]++;
+        //             winners[k] = _users[j];
+        //             break;
+        //         }
+        //     }
+        // }
 
         emit LotteryClosed(
             _users.length,

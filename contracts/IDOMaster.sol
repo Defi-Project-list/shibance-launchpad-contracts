@@ -65,12 +65,13 @@ contract IDOMaster is Ownable, ReentrancyGuard {
     uint256 distributionTime; // distribute tokens to contributors
   }
 
+
   Project[] public projects; // todo, make it private when deploy on mainnet
 
   struct User {
     uint256 pid; // project id
     address addr; // user address
-    address snapshotAmount; // maximum allocation amount in idoToken at snapshot stage
+    uint256 snapshotAmount; // maximum allocation amount in idoToken at snapshot stage
     uint256 allocatedTokenAmount; // allocated token amount for idoToken in Project
     uint256 contributionAmount; // contributed token amount for contributionToken in Project
     // uint256 returnableAmount; // returnable amount when project is canceled, todo
@@ -215,7 +216,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
   /**
    * @notice add new IDO project
    * @param _idoToken new token
-   * @param _contributeToken contribution token(ex. BUSD)
+   * @param _contributionToken contribution token(ex. BUSD)
    * @param _contributionTokenDecimal contribution token decimal(ex. 18)
    * @param _totalTokens total amount to be going to sell
    * @param _softCaps soft capacity threshold in BUSD
@@ -230,10 +231,10 @@ contract IDOMaster is Ownable, ReentrancyGuard {
    */
   function addProject(
     IERC20 _idoToken,
-    IERC20 _contributeToken,
+    IERC20 _contributionToken,
     uint256 _contributionTokenDecimal,
     uint256 _totalTokens,
-    uint256 _softCaps,
+    uint256 _softCaps//,
     uint256 _ratePerContributionToken,
     uint256 _snapshotTime,
     uint256 _userContributionTime,
@@ -254,31 +255,39 @@ contract IDOMaster is Ownable, ReentrancyGuard {
     require(_minContributionAmount > 0, "Invalid minimum contribution amount");
 
     uint256 pid = projects.length.add(1);
-    projects.push(
-      Project({
-        id: pid,
-        // active: true,
-        canceled: false,
-        idoToken: _idoToken,
-        contributeToken: _contributeToken,
-        contributionTokenDecimal: _contributionTokenDecimal,
-        totalTokens: _totalTokens,
-        totalClaimed: 0,
-        softCaps: _softCaps,
-        ratePerContributionToken: _ratePerContributionToken,
-        snapshotTime: _snapshotTime,
-        userContributionTime: _userContributionTime,
-        minContributionAmount: _minContributionAmount,
-        overflowTime1: _overflowTime1,
-        overflowTime2: _overflowTime2,
-        generalSaleTime: _generalSaleTime,
-        distributionTime: _distributionTime
-      })
-    );
+    // projects.push(Project({
+    //   id: pid,
+    //   canceled: false,
+    //   idoToken: _idoToken,
+    //   contributionToken: _contributionToken,
+    //   contributionTokenDecimal: _contributionTokenDecimal,
+    //   totalTokens: _totalTokens,
+    //   totalClaimed: 0,
+    //   totalContributedAmount: 0,
+    //   softCaps: _softCaps
+    // }));
+
+    Project storage project = projects[pid];
+    project.id = pid;
+    project.canceled = false;
+    project.idoToken = _idoToken;
+    project.contributionToken = _contributionToken;
+    project.contributionTokenDecimal = _contributionTokenDecimal;
+    project.totalTokens = _totalTokens;
+    project.totalClaimed = 0;
+    project.softCaps = _softCaps;
+    project.ratePerContributionToken = _ratePerContributionToken;
+    project.snapshotTime = _snapshotTime;
+    project.userContributionTime = _userContributionTime;
+    project.minContributionAmount = _minContributionAmount;
+    project.overflowTime1 = _overflowTime1;
+    project.overflowTime2 = _overflowTime2;
+    project.generalSaleTime = _generalSaleTime;
+    project.distributionTime = _distributionTime;
 
     emit ProjectCreated(
       _idoToken,
-      _contributeToken,
+      _contributionToken,
       _totalTokens,
       _snapshotTime,
       _userContributionTime,
@@ -294,7 +303,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
   /**
    * @notice Update project information, can not update after snapshot time
    * @param _pid project id
-   * @param _contributeToken contribution token(ex. BUSD)
+   * @param _contributionToken contribution token(ex. BUSD)
    * @param _totalTokens total amount to be going to sell
    * @param _softCaps soft capacity threshold in BUSD
    * @param _ratePerContributionToken rate per contribution token(ex. BUSD)
@@ -307,7 +316,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
    */
   function updateProject(
     uint _pid,
-    IERC20 _contributeToken,
+    IERC20 _contributionToken,
     uint256 _totalTokens,
     uint256 _softCaps,
     uint256 _ratePerContributionToken,
@@ -331,7 +340,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
     require(!project.canceled, "Canceled project");
     require(project.snapshotTime > block.timestamp, "Do not allow to update project");
 
-    project.contributeToken = _contributeToken;
+    project.contributionToken = _contributionToken;
     project.totalTokens = _totalTokens;
     project.softCaps = _softCaps;
     project.ratePerContributionToken = _ratePerContributionToken;
@@ -408,7 +417,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
       // project.active,
       project.canceled,
       project.idoToken,
-      project.contributeToken,
+      project.contributionToken,
       project.totalTokens,
       project.totalClaimed,
       project.softCaps,
@@ -430,29 +439,32 @@ contract IDOMaster is Ownable, ReentrancyGuard {
    */
   function takeSnapshotAndAllocate(
     uint256 _pid,
-    uint256[5] _weights,
-    uint256[3] _numberOfLotteryWinners
-  ) public onlyAdmin onlyValidProject(_pid) {
+    uint256[5] calldata _weights,
+    uint256[3] calldata _numberOfLotteryWinners
+  ) external onlyAdmin onlyValidProject(_pid) {
     uint pid = _pid.sub(1);
     Project storage project = projects[pid];
 
-    uint256 userCount = idoVault.users.length;
+    address[] memory users = idoVault.getUsers();
+
+    uint256 userCount = users.length;
     for (uint256 i = 0; i < userCount; i++) {
-      uint256 tierLevel = getTierLevel(idoVault.users[i]);
+      uint256 tierLevel = getTierLevel(users[i]);
       if (tierLevel < BASIC_TIER) {
         continue;
       }
-      participants[_pid][tierLevel].push(idoVault.users[i]);
+      participants[_pid][tierLevel].push(users[i]);
     }
 
     // guaranteed allocation for Royal and Divine tier
     for (uint256 i = ROYAL_TIER; i <= DIVINE_TIER; i++) {
       uint256 allocationPerTier = project.totalTokens.mul(_weights[i - 1]).div(10000);
-      for (uint256 j = 0; j < participants[_pid][i].length; j++) {
+      uint256 len = participants[_pid][i].length;
+      for (uint256 j = 0; j < len; j++) {
         address addr = participants[_pid][i][j];
         whiteList[_pid][addr].pid = _pid;
         whiteList[_pid][addr].addr = addr;
-        whiteList[_pid][addr].snapshotAmount = allocationPerTier.div(participants[_pid][i].length);
+        whiteList[_pid][addr].snapshotAmount = allocationPerTier.div(len);
         whiteList[_pid][addr].active = true;
         whiteList[_pid][addr].claimed = false;
         // whiteList[_pid][addr].returned = false;
@@ -460,7 +472,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
     }
 
     randomGenerator.getRandomNumber(block.timestamp);
-    uint256 seed = randomGenerator.generateTicketNumber();
+    uint256 seed = randomGenerator.viewRandomResult();
 
     // lottery-based allocation for Basic, Premium, Elite tier
     for (uint256 i = BASIC_TIER; i <= ELITE_TIER; i++) {
@@ -469,21 +481,21 @@ contract IDOMaster is Ownable, ReentrancyGuard {
       }
 
       // generate random ticket numbers
-      uint32[] memory ticketNumbers = new uint256[](participants[_pid][i].length);
+      uint32[] memory ticketNumbers = new uint32[](participants[_pid][i].length);
       for (uint256 j = 0; j < participants[_pid][i].length; j++) {
         ticketNumbers[j] = uint32(Utils.random(
           1000000,
           1999999,
-          uint256(keccak256(abi.encodePacked(seed, uint256(uint160(participants[_pid][i])))))
+          uint256(keccak256(abi.encodePacked(seed, uint256(uint160(participants[_pid][i][j])))))
         ));
       }
 
       // determine lottery winner address
       (
-        uint256[] memory winnerAddress,
+        address[] memory winnerAddress,
         uint256[] memory numberOfWins,
         uint256 numberOfWinsWithoutDuplication
-      ) = lotteryFactory.playLottery(participants[_pid], ticketNumbers, _numberOfLotteryWinners[i - 1]);
+      ) = lotteryFactory.playLottery(participants[_pid][i], ticketNumbers, _numberOfLotteryWinners[i - 1]);
       if (numberOfWinsWithoutDuplication < 1) { // if nobody matched
         continue;
       }
@@ -566,7 +578,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
   function claimTokens(uint256 _pid) public onlyValidProject(_pid) returns (uint256) {
     uint pid = _pid.sub(1);
     Project storage project = projects[pid];
-    require(!project.active, "Not closed project");
+    // require(!project.active, "Not closed project");
 
     User storage user = whiteList[_pid][msg.sender];
     require(user.active, "Blocked user");
@@ -582,6 +594,7 @@ contract IDOMaster is Ownable, ReentrancyGuard {
     project.idoToken.transfer(msg.sender, user.allocatedTokenAmount);
     project.totalClaimed = project.totalClaimed.add(user.allocatedTokenAmount);
     user.claimed = true;
+    return user.allocatedTokenAmount;
   }
 
   /**
@@ -612,9 +625,9 @@ contract IDOMaster is Ownable, ReentrancyGuard {
    * @param _user user address
    * @return tier level
    */
-  function getTierLevel(address _user) internal returns (uint256) {
+  function getTierLevel(address _user) internal view returns (uint256) {
     require(_user != address(0), "Zero address");
-    uint256 xWOOF = idoVault.userInfo[_user].xWOOF;
+    (, uint256 xWOOF,,,,,) = idoVault.getUserInfo(_user);
     if (xWOOF >= xWoofForDivine) {
       return DIVINE_TIER;
     } else if (xWOOF >= xWoofForRoyal) {
