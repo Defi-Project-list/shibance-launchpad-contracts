@@ -16,6 +16,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
 
+  address public developer;
+
   IDOJudgement public idoJudgement;
   IDOVault public idoVault;
   IRandomNumberGenerator public randomGenerator;
@@ -73,6 +75,11 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     uint256 distributionTime
   );
 
+  modifier onlyDeveloper() {
+    require(msg.sender == developer, "Developer is required");
+    _;
+  }
+
   constructor(
     IDOJudgement _idoJudgement,
     IDOVault _idoVault,
@@ -95,26 +102,17 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     softCaps = _softCaps;
   }
 
-  function setRatePerContributionToken(uint256 _ratePerContributionToken) external onlyOwner {
-    ratePerContributionToken = _ratePerContributionToken;
+  /**
+   * @notice Sets developer address
+   * @dev Only callable by the contract owner.
+   */
+  function setDeveloper(address _dev) external onlyOwner {
+    require(_dev != address(0), "Cannot be zero address");
+    developer = _dev;
   }
 
-  function setContributionRule(
-    uint256 _minContributionAmount,
-    uint256 _snapshotTime,
-    uint256 _userContributionTime,
-    uint256 _overflowTime1,
-    uint256 _overflowTime2,
-    uint256 _generalSaleTime,
-    uint256 _distributionTime
-  ) external onlyOwner {
-    minContributionAmount = _minContributionAmount;
-    snapshotTime = _snapshotTime;
-    userContributionTime = _userContributionTime;
-    overflowTime1 = _overflowTime1;
-    overflowTime2 = _overflowTime2;
-    generalSaleTime = _generalSaleTime;
-    distributionTime = _distributionTime;
+  function setRatePerContributionToken(uint256 _ratePerContributionToken) external onlyOwner {
+    ratePerContributionToken = _ratePerContributionToken;
   }
 
   /**
@@ -180,7 +178,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   function takeSnapshotAndAllocate(
     uint256[5] calldata _weights,
     uint256[3] calldata _numberOfLotteryWinners
-  ) public onlyOwner {
+  ) public onlyDeveloper {
     
     address[] memory users = idoVault.getUsers();
     for (uint256 i = 0; i < users.length; i++) {
@@ -298,7 +296,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     uint256 _contributionAmount
   ) public nonReentrant {
     require(!isCanceled(), "Canceled project");
-    require(_contributionAmount > 0, "Invalid contribution amount");
+    require(_contributionAmount >= minContributionAmount, "Need to contribute more");
     
     uint256 tierLevel = idoJudgement.getTierLevel(msg.sender);
     require(tierLevel >= BASIC_TIER, "Only tier users can contribute");
@@ -324,11 +322,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     address _addr,
     uint256 _contributionAmount
   ) private {
-    require(!isCanceled(), "Canceled project");
-    require(distributionTime < block.timestamp, "Already ended contribution time");
-    require(generalSaleTime > block.timestamp, "Now is general sale time");
-
     User storage user = whiteList[_addr];
+    require(user.active, "Only for KYC user");
 
     // every user has limitation newtoken amount to contribute
     require(
@@ -343,13 +338,9 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     address _addr,
     uint256 _contributionAmount
   ) private {
-    require(distributionTime < block.timestamp, "Already ended contribution time");
-    require(generalSaleTime > block.timestamp, "Now is general sale time");
-
     User storage user = whiteList[_addr];
-    require(user.active, "Only for active user");
+    require(user.active, "Only for KYC user");
 
-    require(_contributionAmount >= minContributionAmount, "Need to contribute more");
     uint256 tokenAmount =
       calculateTokenAmount(totalContributedAmount.add(_contributionAmount));
     require(tokenAmount < totalTokens, "Exceed the total token amount");
@@ -364,14 +355,17 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    * @notice Return back contributed tokens when project is canceled
    * @return returned tokens
    */
-  function returnBack() public returns (uint256) {
+  function returnBack() public nonReentrant returns (uint256) {
     require(isCanceled(), "Not a canceled project");
+    require(block.timestamp < distributionTime, "Now is not distribution time");
 
     User storage user = whiteList[msg.sender];
-    require(user.active, "Blocked user");
+    require(user.active, "Only for KYC user");
+    require(!user.returned, "Already returned");
 
-    contributionToken.safeTransfer(msg.sender, user.contributionAmount);
-
+    if (user.contributionAmount > 0) {
+      contributionToken.safeTransfer(msg.sender, user.contributionAmount);
+    }
     user.returnBackAmount = user.contributionAmount;
     user.returnBackTime = block.timestamp;
     user.returned = true;
@@ -383,23 +377,22 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    * @notice Claim allocated tokens, blocked list can not claim token
    * @return claimed amount
    */
-  function claimTokens() public returns (uint256) {
-    // require(!active, "Not closed project");
+  function claimTokens() public nonReentrant returns (uint256) {
+    require(!isCanceled(), "Canceled project");
     require(block.timestamp < distributionTime, "Now is not distribution time");
 
     User storage user = whiteList[msg.sender];
-    require(user.active, "Blocked user");
+    require(user.active, "Only for KYC user");
+    require(!user.claimed, "Already claimed");
 
-    uint256 userBalance = getUserTotalPurchase();
-    require(userBalance > 0, "Invalid claim");
-
-    user.allocatedTokenAmount = calculateTokenAmount(userBalance);
-
-    idoToken.transfer(msg.sender, user.allocatedTokenAmount);
-    totalClaimed = totalClaimed.add(user.allocatedTokenAmount);
-
+    user.allocatedTokenAmount = calculateTokenAmount(user.contributionAmount);
+    if (user.allocatedTokenAmount > 0) {
+      idoToken.transfer(msg.sender, user.allocatedTokenAmount);
+      totalClaimed = totalClaimed.add(user.allocatedTokenAmount);
+    }
     user.claimTime = block.timestamp;
     user.claimed = true;
+
     return user.allocatedTokenAmount;
   }
 
