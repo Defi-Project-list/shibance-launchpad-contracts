@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/IShibanceLotteryFactory.sol";
 import "./interfaces/IRandomNumberGenerator.sol";
 import "./libraries/Utils.sol";
 import "./IDOVault.sol";
@@ -18,9 +17,8 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   using SafeERC20 for IERC20;
 
   IDOVault public idoVault;
-  IDOJudgement public idoJudgement;
-  IShibanceLotteryFactory public lotteryFactory;
   IRandomNumberGenerator public randomGenerator;
+  IDOJudgement public idoJudgement;
 
   address public admin;
 
@@ -51,7 +49,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   constructor(
     address _admin,
     address _idoVault,
-    address _lotteryFactory,
     address _randomGenerator,
     uint256 _xWoofForBasic,
     uint256 _xWoofForPremium,
@@ -62,10 +59,9 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
 
     admin = _admin;
     idoVault = IDOVault(_idoVault);
-    lotteryFactory = IShibanceLotteryFactory(_lotteryFactory);
     randomGenerator = IRandomNumberGenerator(_randomGenerator);
-
     idoJudgement = new IDOJudgement(idoVault);
+
     idoJudgement.setxWOOFLevel(
       _xWoofForBasic,
       _xWoofForPremium,
@@ -81,13 +77,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   function setIDOVault(IDOVault _idoVault) external onlyOwner {
     idoVault = _idoVault;
     idoJudgement.setIDOVault(_idoVault);
-  }
-
-  /**
-   * @notice 
-   */
-  function setLotteryFactory(IShibanceLotteryFactory _lotteryFactory) external onlyOwner {
-    lotteryFactory = _lotteryFactory;
   }
 
   function setRandomGenerator(IRandomNumberGenerator _randomGenerator) external onlyOwner {
@@ -154,6 +143,9 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
     require(_totalTokens > _softCaps, "Total token amount is smaller than soft capability");
 
     IDOProject idoProject = new IDOProject(
+      idoJudgement,
+      idoVault,
+      randomGenerator,
       _idoToken,
       _contributionToken,
       _contributionTokenDecimal,
@@ -223,113 +215,5 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _generalSaleTime,
       _distributionTime
     );
-  }
-
-  /**
-   * @notice Take snapshot and calculate allocation amount
-   * @param _pid project id
-   * @param _weights weightage for every tier level, percentage in 1000 as 100%
-   * @param _numberOfLotteryWinners [0]: for basic, [1]: for premium, [2]: for elite
-   */
-  function takeSnapshotAndAllocate(
-    uint256 _pid,
-    uint256[5] calldata _weights,
-    uint256[3] calldata _numberOfLotteryWinners
-  ) external onlyAdmin onlyValidProject(_pid) {
-
-    _pid = _pid.sub(1);
-    getParticipants(_pid);
-
-    IDOProject project = projects[_pid];
-
-    (uint256 totalTokens,) = project.getProjectBalance();
-
-    // guaranteed allocation for Royal and Divine tier
-    for (uint256 i = ROYAL_TIER; i <= DIVINE_TIER; i++) {
-      uint256 allocationPerTier = totalTokens.mul(_weights[i - 1]).div(10000);
-      uint256 len = participants[_pid][i].length;
-      for (uint256 j = 0; j < len; j++) {
-        address addr = participants[_pid][i][j];
-        project.addWhiteList(
-          addr,
-          allocationPerTier.div(len)
-        );
-      }
-    }
-
-    randomGenerator.getRandomNumber(block.timestamp);
-    uint256 seed = randomGenerator.viewRandomResult();
-
-    // lottery-based allocation for Basic, Premium, Elite tier
-    for (uint256 i = BASIC_TIER; i <= ELITE_TIER; i++) {
-      if (participants[_pid][i].length < 1) {
-        continue;
-      }
-
-      // generate random ticket numbers
-      uint32[] memory ticketNumbers = generateTicketNumber(_pid, i, seed);
-
-      // determine lottery winner address
-      (
-        address[] memory winnerAddress,
-        uint256[] memory numberOfWins,
-        uint256 numberOfWinsWithoutDuplication
-      ) = lotteryFactory.playLottery(participants[_pid][i], ticketNumbers, _numberOfLotteryWinners[i - 1]);
-      if (numberOfWinsWithoutDuplication < 1) { // if nobody matched
-        continue;
-      }
-
-      // allocate maximum amount to contribute
-      uint256 allocationPerTier = totalTokens.mul(_weights[i - 1]).div(10000);
-      uint256 allocationPerEntry = allocationPerTier.div(numberOfWinsWithoutDuplication);
-      for (uint256 j = 0; j < winnerAddress.length; j++) {
-        address addr = winnerAddress[j];
-        project.addWhiteList(
-          addr,
-          allocationPerEntry.mul(numberOfWins[i])
-        );
-      }
-    }
-  }
-
-  /**
-   * @notice List all stakeholders according to their tier level
-   * @param _pid project index
-   * @dev only used as private function
-   */
-  function getParticipants(
-    uint256 _pid
-  ) private {
-    address[] memory users = idoVault.getUsers();
-    for (uint256 i = 0; i < users.length; i++) {
-      uint256 tierLevel = idoJudgement.getTierLevel(users[i]);
-      if (tierLevel < BASIC_TIER) {
-        continue;
-      }
-      participants[_pid][tierLevel].push(users[i]);
-    }
-  }
-
-  /**
-   * @notice Generate ticket number for participants of given projects
-   * @param _pid project index
-   * @param _tierLevel tier level
-   * @param _seed seed for random
-   * @return array of ticket numbers, length is equal to length of participants
-   */
-  function generateTicketNumber(
-    uint256 _pid,
-    uint256 _tierLevel,
-    uint256 _seed
-  ) private view returns (uint32[] memory) {
-    uint32[] memory ticketNumbers = new uint32[](participants[_pid][_tierLevel].length);
-    for (uint256 j = 0; j < participants[_pid][_tierLevel].length; j++) {
-      ticketNumbers[j] = uint32(Utils.random(
-        1000000,
-        1999999,
-        uint256(keccak256(abi.encodePacked(_seed, uint256(uint160(participants[_pid][_tierLevel][j])))))
-      ));
-    }
-    return ticketNumbers;
   }
 }

@@ -4,14 +4,13 @@ pragma solidity ^0.8.4;
 
 import '@openzeppelin/contracts/utils/math/SafeMath.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import './interfaces/IShibanceLotteryFactory.sol';
 import "./interfaces/IRandomNumberGenerator.sol";
 import "./libraries/Utils.sol";
 
-contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Ownable {
+contract ShibanceLotteryFactory is IShibanceLotteryFactory, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -19,6 +18,14 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
     IRandomNumberGenerator public randomGenerator;
 
     bool public isLotteryEnabled = true;
+
+    mapping(address => bool) joined;
+    // level => address[]
+    mapping(uint256 => address[]) players;
+
+    mapping(address => uint32) tickets; // length of address[] == length of mapping
+    // level => uint32[]
+    mapping(uint256 => uint32[]) finalNumbers;
 
     modifier onlyOperator() {
         require(msg.sender == operatorAddress, "Not operator");
@@ -29,18 +36,17 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
         uint32 randomNumber
     );
     event LotteryClosed(
-        uint256 numberOfUsers,
+        uint256 level,
         uint256 numberOfTargetWinners,
-        uint256[] finalNumbers,
         address[] winners,
-        uint256[] winTimes
+        uint256 numberOfWinners
     );
     event NewOperator(
         address operatorAddress
     );
     event NewRandomGenerator(address indexed randomGenerator);
 
-    constructor(address _randomGenerator) {
+    constructor(IRandomNumberGenerator _randomGenerator) {
         randomGenerator = IRandomNumberGenerator(_randomGenerator);
         operatorAddress = owner();
     }
@@ -48,86 +54,95 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
     /**
      * @notice enable/disable lottery
      */
-    function setLotteryEnabled(bool _enabled) external onlyOwner() {
+    function setLotteryEnabled(bool _enabled) external onlyOwner {
         isLotteryEnabled = _enabled;
+    }
+
+    function addPlayer(uint256 level, address player) external onlyOwner override {
+        require(!joined[player], "Already joined player");
+        players[level].push(player);
+        joined[player] = true;
+    }
+
+    function generateTicketNumbers(uint256 level) external onlyOwner override {
+        randomGenerator.getRandomNumber(block.timestamp);
+        uint256 seed = randomGenerator.viewRandomResult();
+
+        for (uint256 i = 0; i < players[level].length; i++) {
+            tickets[players[level][i]] = uint32(Utils.random(
+                1000000,
+                1999999,
+                uint256(keccak256(abi.encodePacked(seed, uint256(uint160(players[level][i])))))
+            ));
+        }
     }
 
     /**
      * @notice Generate final numbers as the count of _numberOfWinners, and match ticket numbers
-     * @param _users: list of user address
-     * @param _ticketNumbers: list of ticket numbers
-     * @param _numberOfWinners: number of target winners
+     * @param _level play level
+     * @param _numberOfWinners number of target winners
      */
     function playLottery(
-        address[] calldata _users,
-        uint32[] calldata _ticketNumbers,
+        uint256 _level,
         uint256 _numberOfWinners
     )
         external
         override
-        onlyOperator
+        onlyOwner
         returns (
-            address[] memory,   // winner address
-            uint256[] memory,    // number of winning times per address
-            uint256              // number of winning times without duplication
+            address[] memory,   // winner address, contains duplication
+            uint256             // winner count
         )
     {
         require(isLotteryEnabled, "Lottery not enabled");
         require(_numberOfWinners > 0, "Number of winners must be one or more");
-        require(_users.length == _ticketNumbers.length, "Length of users and tickets must be same");
-        require(_users.length >= _numberOfWinners, "Overflow number of winners");
+        require(players[_level].length >= _numberOfWinners, "Overflow number of winners");
 
-        randomGenerator.getRandomNumber(block.timestamp);
-        uint256 seed = randomGenerator.viewRandomResult32();
+        drawFinalNumbers(_level, _numberOfWinners);
 
         address[] memory winners = new address[](_numberOfWinners);
-        uint256[] memory winTimes = new uint256[](_numberOfWinners);
-        uint256[] memory finalNumbers = new uint256[](_numberOfWinners);
-
-        uint256 winTimesWithout;
-        uint256 i;
-        uint256 j;
         uint256 k;
-        // address addr;
-        uint256 userCount = _users.length;
 
-        for (i = 0; i < _numberOfWinners; i++) {
-            // addr = _users[i];
-            finalNumbers[i] = uint32(Utils.random(
-                1000000,
-                1999999,
-                uint256(keccak256(abi.encodePacked(seed, i)))
-            ));
-            // finalNumbers[i] = finalNumber;
-
-            // emit RandomGenerated(finalNumber);
-
-            for (j = 0; j < userCount; j++) {
-                require(_ticketNumbers[j] >= 1000000 && _ticketNumbers[j] <= 1999999, "Ticket number overflow");
-                if (_ticketNumbers[j] == finalNumbers[i]) {
-                    // if matched ticket number, will count it against user address
-                    for (k = 0; k < i; k++) {
-                        if (winners[k] == _users[j]) {
-                            break;
-                        }
-                    }
-                    winTimesWithout++;
-                    winTimes[k]++;
-                    winners[k] = _users[j];
+        for (uint256 j = 0; j < players[_level].length; j++) {
+            for (uint256 i = 0; i < _numberOfWinners; i++) {
+                require(tickets[players[_level][j]] >= 1000000 && tickets[players[_level][j]] <= 1999999, "Ticket number overflow");
+                if (tickets[players[_level][j]] == finalNumbers[_level][i]) {
+                    winners[k++] = players[_level][j];
                     break;
                 }
             }
         }
 
         emit LotteryClosed(
-            userCount,
+            _level,
             _numberOfWinners,
-            finalNumbers,
             winners,
-            winTimes
+            k
         );
 
-        return (winners, winTimes, winTimesWithout);
+        return (winners, k);
+    }
+
+    /**
+     * @notice Generate random final numbers
+     * @param _level play level
+     * @param _numberOfWinners number of target winners
+     * @dev Callable as private function
+     */
+    function drawFinalNumbers(
+        uint256 _level,
+        uint256 _numberOfWinners
+    ) private {
+        randomGenerator.getRandomNumber(block.timestamp);
+        uint256 seed = randomGenerator.viewRandomResult32();
+
+        for (uint256 i = 0; i < _numberOfWinners; i++) {
+            finalNumbers[_level].push(uint32(Utils.random(
+                1000000,
+                1999999,
+                uint256(keccak256(abi.encodePacked(seed, players[_level][i])))
+            )));
+        }
     }
 
     /**
