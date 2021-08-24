@@ -77,48 +77,50 @@ contract ShibanceLotteryFactory is ReentrancyGuard, IShibanceLotteryFactory, Own
         require(_users.length == _ticketNumbers.length, "Length of users and tickets must be same");
         require(_users.length >= _numberOfWinners, "Overflow number of winners");
 
-        uint256 length = _numberOfWinners; // maximum length of returning array
-
-        address[] memory winners = new address[](length);
-        uint256[] memory winTimes = new uint256[](length);
-        uint256[] memory finalNumbers = new uint256[](length);
-
-        uint256 winTimesWithout = 0;
-
         randomGenerator.getRandomNumber(block.timestamp);
         uint256 seed = randomGenerator.viewRandomResult32();
 
-        // for (uint256 i = 0; i < length; i++) {
-        //     address addr = _users[i];
-        //     uint32 finalNumber = uint32(Utils.random(
-        //         1000000,
-        //         1999999,
-        //         uint256(keccak256(abi.encodePacked(seed, uint256(uint160(addr)))))
-        //     ));
-        //     finalNumbers[i] = finalNumber;
+        address[] memory winners = new address[](_numberOfWinners);
+        uint256[] memory winTimes = new uint256[](_numberOfWinners);
+        uint256[] memory finalNumbers = new uint256[](_numberOfWinners);
 
-        //     emit RandomGenerated(finalNumber);
+        uint256 winTimesWithout;
+        uint256 i;
+        uint256 j;
+        uint256 k;
+        // address addr;
+        uint256 userCount = _users.length;
 
-        //     for (uint256 j = 0; j < _users.length; j++) {
-        //         require(_ticketNumbers[j] >= 1000000 && _ticketNumbers[j] <= 1999999, "Ticket number overflow");
-        //         if (_ticketNumbers[j] == finalNumber) {
-        //             // if matched ticket number, will count it against user address
-        //             uint256 k = 0;
-        //             for (k = 0; k < i; k++) {
-        //                 if (winners[k] == _users[j]) {
-        //                     break;
-        //                 }
-        //             }
-        //             winTimesWithout++;
-        //             winTimes[k]++;
-        //             winners[k] = _users[j];
-        //             break;
-        //         }
-        //     }
-        // }
+        for (i = 0; i < _numberOfWinners; i++) {
+            // addr = _users[i];
+            finalNumbers[i] = uint32(Utils.random(
+                1000000,
+                1999999,
+                uint256(keccak256(abi.encodePacked(seed, i)))
+            ));
+            // finalNumbers[i] = finalNumber;
+
+            // emit RandomGenerated(finalNumber);
+
+            for (j = 0; j < userCount; j++) {
+                require(_ticketNumbers[j] >= 1000000 && _ticketNumbers[j] <= 1999999, "Ticket number overflow");
+                if (_ticketNumbers[j] == finalNumbers[i]) {
+                    // if matched ticket number, will count it against user address
+                    for (k = 0; k < i; k++) {
+                        if (winners[k] == _users[j]) {
+                            break;
+                        }
+                    }
+                    winTimesWithout++;
+                    winTimes[k]++;
+                    winners[k] = _users[j];
+                    break;
+                }
+            }
+        }
 
         emit LotteryClosed(
-            _users.length,
+            userCount,
             _numberOfWinners,
             finalNumbers,
             winners,
