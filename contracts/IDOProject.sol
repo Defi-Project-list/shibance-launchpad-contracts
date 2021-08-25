@@ -6,11 +6,9 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/IRandomNumberGenerator.sol";
 import "./IDOContext.sol";
 import "./IDOJudgement.sol";
 import "./IDOVault.sol";
-import "./ShibanceLottery.sol";
 
 contract IDOProject is IDOContext, ReentrancyGuard {
   using SafeMath for uint256;
@@ -20,8 +18,6 @@ contract IDOProject is IDOContext, ReentrancyGuard {
 
   IDOJudgement public idoJudgement;
   IDOVault public idoVault;
-  IRandomNumberGenerator public randomGenerator;
-  IShibanceLotteryFactory public lotteryFactory;
 
   // bool active; // true if opening, false if closed
   // bool canceled; // true if canceled, canceled project will return back contribution token.
@@ -57,8 +53,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     bool returned; // true if returned back, todo
   }
 
-  address[] public royals;
-  address[] public divines;
+  mapping(uint256 => address[]) participants;
   mapping(address => User) public whiteList;
   
   event ProjectUpdated(
@@ -83,7 +78,6 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   constructor(
     IDOJudgement _idoJudgement,
     IDOVault _idoVault,
-    IRandomNumberGenerator _randomGenerator,
     IERC20 _idoToken,
     IERC20 _contributionToken,
     uint256 _contributionTokenDecimal,
@@ -92,8 +86,6 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   ) {
     idoJudgement = _idoJudgement;
     idoVault = _idoVault;
-    randomGenerator = _randomGenerator;
-    lotteryFactory = new ShibanceLotteryFactory(randomGenerator);
 
     idoToken = _idoToken;
     contributionToken = _contributionToken;
@@ -173,11 +165,9 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   /**
    * @notice Take snapshot and calculate allocation amount
    * @param _weights weightage for every tier level, percentage in 1000 as 100%
-   * @param _numberOfLotteryWinners [0]: for basic, [1]: for premium, [2]: for elite
    */
   function takeSnapshotAndAllocate(
-    uint256[5] calldata _weights,
-    uint256[3] calldata _numberOfLotteryWinners
+    uint256[5] calldata _weights
   ) public onlyDeveloper {
     
     address[] memory users = idoVault.getUsers();
@@ -187,54 +177,16 @@ contract IDOProject is IDOContext, ReentrancyGuard {
         continue;
       }
       addWhiteList(users[i], 0);
-      if (
-        tierLevel == BASIC_TIER ||
-        tierLevel == PREMIUM_TIER ||
-        tierLevel == ELITE_TIER
-      ) {
-        lotteryFactory.addPlayer(tierLevel, users[i]);
-      } else if (tierLevel == ROYAL_TIER) {
-        royals.push(users[i]);
-      } else if (tierLevel == DIVINE_TIER) {
-        divines.push(users[i]);
-      }
+      participants[tierLevel].push(users[i]);
     }
 
-    // snapshot allocation for Royal tier
-    uint256 allocationPerUserTier = 
-      royals.length > 0 ?
-      totalTokens.mul(_weights[ROYAL_TIER - 1]).div(10000).div(royals.length) : 0;
-    for (uint256 i = 0; i < royals.length; i++) {
-      whiteList[royals[i]].snapshotAmount = allocationPerUserTier;
-    }
-
-    // snapshot allocation for Divine tier
-    allocationPerUserTier = 
-      divines.length > 0 ?
-      totalTokens.mul(_weights[DIVINE_TIER - 1]).div(10000).div(divines.length) : 0;
-    for (uint256 i = 0; i < divines.length; i++) {
-      whiteList[divines[i]].snapshotAmount = allocationPerUserTier;
-    }
-
-    // lottery-based allocation for Basic, Premium, Elite tier
-    for (uint256 i = BASIC_TIER; i <= ELITE_TIER; i++) {
-      lotteryFactory.generateTicketNumbers(i);
-
-      // determine lottery winner address
-      (
-        address[] memory winnerAddress,
-        uint256 numberOfWins
-      ) = lotteryFactory.playLottery(i, _numberOfLotteryWinners[i - 1]);
-      if (numberOfWins < 1) { // if nobody matched
-        continue;
-      }
-
-      // allocate maximum amount to contribute
-      uint256 allocationPerTier = totalTokens.mul(_weights[i - 1]).div(10000);
-      uint256 allocationPerEntry = allocationPerTier.div(numberOfWins);
-      for (uint256 j = 0; j < numberOfWins; j++) {
-        whiteList[winnerAddress[j]].snapshotAmount =
-        whiteList[winnerAddress[j]].snapshotAmount.add(allocationPerEntry);
+    for (uint tierLevel = BASIC_TIER; tierLevel <= DIVINE_TIER; tierLevel++) {
+      // snapshot allocation for all the tiers
+      uint256 allocationPerUserTier = 
+        participants[tierLevel].length > 0 ?
+        totalTokens.mul(_weights[ROYAL_TIER - 1]).div(10000).div(participants[tierLevel].length) : 0;
+      for (uint256 i = 0; i < participants[tierLevel].length; i++) {
+        whiteList[participants[tierLevel][i]].snapshotAmount = allocationPerUserTier;
       }
     }
   }
@@ -255,7 +207,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   function addWhiteList(
     address addr,
     uint256 snapshotAmount
-  ) internal onlyOwner {
+  ) internal {
     whiteList[addr].addr = addr;
     whiteList[addr].snapshotAmount = snapshotAmount;
     whiteList[addr].active = true;

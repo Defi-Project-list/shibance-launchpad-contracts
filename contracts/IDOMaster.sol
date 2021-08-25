@@ -6,7 +6,6 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/IRandomNumberGenerator.sol";
 import "./libraries/Utils.sol";
 import "./IDOVault.sol";
 import "./IDOJudgement.sol";
@@ -17,7 +16,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   using SafeERC20 for IERC20;
 
   IDOVault public idoVault;
-  IRandomNumberGenerator public randomGenerator;
   IDOJudgement public idoJudgement;
 
   address public admin;
@@ -49,7 +47,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   constructor(
     address _admin,
     address _idoVault,
-    address _randomGenerator,
     uint256 _xWoofForBasic,
     uint256 _xWoofForPremium,
     uint256 _xWoofForElite,
@@ -59,7 +56,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
 
     admin = _admin;
     idoVault = IDOVault(_idoVault);
-    randomGenerator = IRandomNumberGenerator(_randomGenerator);
     idoJudgement = new IDOJudgement(idoVault);
 
     idoJudgement.setxWOOFLevel(
@@ -77,10 +73,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   function setIDOVault(IDOVault _idoVault) external onlyOwner {
     idoVault = _idoVault;
     idoJudgement.setIDOVault(_idoVault);
-  }
-
-  function setRandomGenerator(IRandomNumberGenerator _randomGenerator) external onlyOwner {
-    randomGenerator = _randomGenerator;
   }
 
   /**
@@ -145,7 +137,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
     IDOProject idoProject = new IDOProject(
       idoJudgement,
       idoVault,
-      randomGenerator,
       _idoToken,
       _contributionToken,
       _contributionTokenDecimal,
