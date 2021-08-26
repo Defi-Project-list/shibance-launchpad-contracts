@@ -121,6 +121,8 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
    * @param _contributionTokenDecimal contribution token decimal(ex. 18)
    * @param _totalTokens total amount to be going to sell
    * @param _softCaps soft capacity threshold in BUSD
+   * @return pid project id(= project index + 1), project
+   * @return idoProject instance of IDOProject
    */
   function addProject(
     IERC20 _idoToken,
@@ -128,11 +130,11 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
     uint256 _contributionTokenDecimal,
     uint256 _totalTokens,
     uint256 _softCaps
-  ) external onlyAdmin {
+  ) external onlyAdmin returns (uint256 pid, IDOProject idoProject) {
     require(_contributionTokenDecimal > 0, "Invalid token decimal");
     require(_totalTokens > _softCaps, "Total token amount is smaller than soft capability");
 
-    IDOProject idoProject = new IDOProject(
+    idoProject = new IDOProject(
       idoJudgement,
       idoVault,
       _idoToken,
@@ -156,6 +158,8 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _contributionTokenDecimal,
       _totalTokens,
       _softCaps);
+
+    return (projects.length, idoProject);
   }
 
   /**

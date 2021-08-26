@@ -13,6 +13,6 @@ contract SafeMath7 {
     // x = z^(log_z(x))
     // means that x^y = (z^(log_z(x)))^y
     // Let us assume z = 2
-    return base**exponent;
+    return base ** exponent;
   }
 }
