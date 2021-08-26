@@ -114,6 +114,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    * @param _minContributionAmount minimum contribution amount
    * @param _softCaps soft capacity threshold in BUSD
    * @param _ratePerContributionToken rate per contribution token(ex. BUSD)
+   * @param _snapshotTime, // IDO snapshot date, private, hidden to user, todo
    * @param _userContributionTime user can send BUSD to IDO contract
    * @param _overflowTime1 only tier 4 and 5 can contribute more
    * @param _overflowTime2 only tier 1,2,and 3 can contribute more
@@ -126,6 +127,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     uint256 _minContributionAmount,
     uint256 _softCaps,
     uint256 _ratePerContributionToken,
+    uint256 _snapshotTime,
     uint256 _userContributionTime,
     uint256 _overflowTime1,
     uint256 _overflowTime2,
@@ -134,13 +136,14 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   ) external onlyOwner {
     require(!isCanceled(), "Canceled project");
     require(totalTokens > _softCaps, "Total token amount is smaller than soft capability");
-    require(snapshotTime > block.timestamp, "Do not allow to update project");
+    require(_snapshotTime > block.timestamp, "Do not allow to update project");
 
     contributionToken = _contributionToken;
     contributionTokenDecimal = _contributionTokenDecimal;
     minContributionAmount = _minContributionAmount;
     softCaps = _softCaps;
     ratePerContributionToken = _ratePerContributionToken;
+    snapshotTime = _snapshotTime;
     userContributionTime = _userContributionTime;
     overflowTime1 = _overflowTime1;
     overflowTime2 = _overflowTime2;

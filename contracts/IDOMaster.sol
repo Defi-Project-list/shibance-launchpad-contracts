@@ -21,8 +21,6 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
   address public admin;
 
   IDOProject[] public projects; // todo, make it private when deploy on mainnet
-  // [project index][tier level]: user address
-  mapping(uint256 => mapping(uint256 => address[])) participants;
 
   uint256 public minPeriod = 1 hours; // minimum period between contribute steps
 
@@ -145,7 +143,7 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
     );
 
     _idoToken.safeTransferFrom(
-      msg.sender,
+      address(this),
       address(idoProject),
       _totalTokens
     );
@@ -168,6 +166,7 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
    * @param _minContributionAmount minimum contribution amount
    * @param _softCaps soft capacity threshold in BUSD
    * @param _ratePerContributionToken rate per contribution token(ex. BUSD)
+   * @param _snapshotTime IDO snapshot date, private, hidden to user, todo
    * @param _userContributionTime user can send BUSD to IDO contract
    * @param _overflowTime1 only tier 4 and 5 can contribute more
    * @param _overflowTime2 only tier 1,2,and 3 can contribute more
@@ -181,12 +180,14 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
     uint256 _minContributionAmount,
     uint256 _softCaps,
     uint256 _ratePerContributionToken,
+    uint256 _snapshotTime,
     uint256 _userContributionTime,
     uint256 _overflowTime1,
     uint256 _overflowTime2,
     uint256 _generalSaleTime,
     uint256 _distributionTime
   ) external onlyAdmin onlyValidProject(_pid) {
+    require(_snapshotTime > block.timestamp, "Do not allow to update project");
     require(_userContributionTime <= _overflowTime1 + minPeriod, "Invalid overflow window1 time");
     require(_overflowTime1 <= _overflowTime2 + minPeriod, "Invalid overflow window2 time");
     require(_overflowTime2 <= _generalSaleTime + minPeriod, "Invalid general sale time");
@@ -200,6 +201,7 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _minContributionAmount,
       _softCaps,
       _ratePerContributionToken,
+      _snapshotTime,
       _userContributionTime,
       _overflowTime1,
       _overflowTime2,
