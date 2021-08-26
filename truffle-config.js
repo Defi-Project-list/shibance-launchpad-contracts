@@ -1,7 +1,10 @@
 // https://docs.binance.org/smart-chain/developer/deploy/truffle.html
 
-const HDWalletProvider = require('truffle-hdwallet-provider');
+const HDWalletProvider = require('@truffle/hdwallet-provider');
 require('dotenv').config();
+
+const mnemonic = require('./secrets.json').mnemonic;
+console.log(mnemonic);
 
 module.exports = {
     networks: {
@@ -11,14 +14,14 @@ module.exports = {
             network_id: "*",       // Any network (default: none)
         },
         testnet: {
-            provider: () => new HDWalletProvider(process.env.ACCOUNT_PK, `https://data-seed-prebsc-1-s1.binance.org:8545`),
+            provider: () => new HDWalletProvider(mnemonic, `https://data-seed-prebsc-1-s1.binance.org:8545`),
             network_id: 97,
             confirmations: 10,
             timeoutBlocks: 200,
             skipDryRun: true
         },
         bsc: {
-            provider: () => new HDWalletProvider(process.env.ACCOUNT_PK, `https://bsc-dataseed1.binance.org`),
+            provider: () => new HDWalletProvider(mnemonic, `https://bsc-dataseed1.binance.org`),
             network_id: 56,
             confirmations: 10,
             timeoutBlocks: 200,

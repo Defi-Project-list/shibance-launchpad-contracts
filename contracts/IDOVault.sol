@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import '@openzeppelin/contracts/access/Ownable.sol';
 import './interfaces/Pausable.sol';
+import './interfaces/IMasterChef.sol';
 import './libraries/SafeMath7.sol';
 
 contract IDOVault is Ownable, Pausable, SafeMath7 {
