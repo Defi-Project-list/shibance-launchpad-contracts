@@ -123,8 +123,8 @@ contract IDOVault is Ownable, Pausable, SafeMath7 {
     // xWOOF = WOOF x Bonus Multiplier, Bonus Multiplier = min(1.0224^Weeks locked, 10)
     // Weeks locked is a continuous number, calculated as unstake date minus current date, divided by 52
     // refer: https://github.com/abdk-consulting/abdk-libraries-solidity
-    uint256 weeksLocks = (user.unlockTime - user.lockTime) / (1 days) / 52;
-    user.xWOOF = pow7(1024, weeksLocks);
+    // uint256 weeksLocks = (user.unlockTime - user.lockTime) / (1 days) / 52;
+    user.xWOOF = user.xWOOF.add(user.shares); // pow7(1024, weeksLocks);
 
     _earn();
 

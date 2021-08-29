@@ -172,10 +172,14 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   function takeSnapshotAndAllocate(
     uint256[5] calldata _weights
   ) public onlyDeveloper {
+    require(snapshotTime <= block.timestamp &&
+      block.timestamp < userContributionTime,
+      "Allow to call at snapshotting time");
     
     address[] memory users = idoVault.getUsers();
     for (uint256 i = 0; i < users.length; i++) {
       uint256 tierLevel = idoJudgement.getTierLevel(users[i]);
+
       if (tierLevel < BASIC_TIER) {
         continue;
       }
@@ -187,7 +191,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
       // snapshot allocation for all the tiers
       uint256 allocationPerUserTier = 
         participants[tierLevel].length > 0 ?
-        totalTokens.mul(_weights[ROYAL_TIER - 1]).div(10000).div(participants[tierLevel].length) : 0;
+        totalTokens.mul(_weights[tierLevel - 1]).div(10000).div(participants[tierLevel].length) : 0;
+
       for (uint256 i = 0; i < participants[tierLevel].length; i++) {
         whiteList[participants[tierLevel][i]].snapshotAmount = allocationPerUserTier;
       }
@@ -203,8 +208,26 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   }
 
   function isCanceled() public view returns (bool) {
-    return block.timestamp > distributionTime &&
+    return distributionTime > 0 && block.timestamp > distributionTime &&
       totalContributedAmount < softCaps;
+  }
+
+  function getProjectTimes() public view returns (
+    uint256,
+    uint256,
+    uint256,
+    uint256,
+    uint256,
+    uint256
+  ) {
+    return (
+      snapshotTime,
+      userContributionTime,
+      overflowTime1,
+      overflowTime2,
+      generalSaleTime,
+      distributionTime
+    );
   }
 
   function addWhiteList(
@@ -241,6 +264,26 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    */
   function getUserTotalPurchase() public view returns (uint256) {
     return whiteList[msg.sender].contributionAmount;
+  }
+
+  function getUserInfo(address user) public view returns (
+    uint256 snapshotAmount,
+    uint256 allocatedTokenAmount,
+    uint256 contributionAmount,
+    uint256 returnBackAmount,
+    uint256 lastContributionTime,
+    uint256 claimTime,
+    uint256 returnBackTime
+  ) {
+    return (
+      whiteList[user].snapshotAmount,
+      whiteList[user].allocatedTokenAmount,
+      whiteList[user].contributionAmount,
+      whiteList[user].returnBackAmount,
+      whiteList[user].lastContributionTime,
+      whiteList[user].claimTime,
+      whiteList[user].returnBackTime
+    );
   }
 
   /**

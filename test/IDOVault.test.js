@@ -1,5 +1,4 @@
-const { time } = require('@openzeppelin/test-helpers');
-const { assert, expect } = require('chai');
+const { expect } = require('chai');
 const { ethers } = require("hardhat");
 
 describe('IDOVault', () => {
@@ -78,7 +77,6 @@ describe('IDOVault', () => {
 
     expect((await this.idoVault.connect(big).getStakeAmount()).toString()).to.equal('10000000000000000000'); // 10* 10**18
 
-    console.log('listing userinfo');
     const {
       shares, xWOOF, lastDepositedTime, cakeAtLastUserAction, lockTime, unlockTime
     } = await this.idoVault.getUserInfo(big.address);
@@ -119,7 +117,7 @@ describe('IDOVault', () => {
       let blockcNumber = await ethers.provider.getBlockNumber();
       let block = await ethers.provider.getBlock(blockcNumber);
   
-      expect(unlockTime).to.equal(block.timestamp + 20);
+      expect(unlockTime).to.gte(block.timestamp + 20);
     }
 
     /// pass 10 seconds

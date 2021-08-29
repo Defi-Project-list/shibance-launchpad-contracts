@@ -116,25 +116,26 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
 
   /**
    * @notice add new IDO project
+   * @param _devAddress developer address
    * @param _idoToken new token
    * @param _contributionToken contribution token(ex. BUSD)
    * @param _contributionTokenDecimal contribution token decimal(ex. 18)
    * @param _totalTokens total amount to be going to sell
    * @param _softCaps soft capacity threshold in BUSD
    * @return pid project id(= project index + 1), project
-   * @return idoProject instance of IDOProject
    */
   function addProject(
+    address _devAddress,
     IERC20 _idoToken,
     IERC20 _contributionToken,
     uint256 _contributionTokenDecimal,
     uint256 _totalTokens,
     uint256 _softCaps
-  ) external onlyAdmin returns (uint256 pid, IDOProject idoProject) {
-    require(_contributionTokenDecimal > 0, "Invalid token decimal");
-    require(_totalTokens > _softCaps, "Total token amount is smaller than soft capability");
+  ) external onlyAdmin returns (uint256) {
+    // require(_contributionTokenDecimal > 0, "Invalid token decimal");
+    require(_totalTokens >= _softCaps, "Total token amount is smaller than soft capability");
 
-    idoProject = new IDOProject(
+    IDOProject idoProject = new IDOProject(
       idoJudgement,
       idoVault,
       _idoToken,
@@ -144,11 +145,13 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _softCaps
     );
 
-    _idoToken.safeTransferFrom(
-      address(this),
+    _idoToken.safeApprove(address(idoProject), _idoToken.balanceOf(address(this)));
+    _idoToken.transfer(
       address(idoProject),
-      _totalTokens
+      _idoToken.balanceOf(address(this))
     );
+
+    idoProject.setDeveloper(_devAddress);
 
     projects.push(idoProject);
 
@@ -159,7 +162,7 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _totalTokens,
       _softCaps);
 
-    return (projects.length, idoProject);
+    return projects.length;
   }
 
   /**
@@ -212,5 +215,10 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _generalSaleTime,
       _distributionTime
     );
+  }
+
+  function project(uint256 _pid) public view onlyValidProject(_pid) returns (IDOProject) {
+    uint pid = _pid.sub(1);
+    return projects[pid];
   }
 }
