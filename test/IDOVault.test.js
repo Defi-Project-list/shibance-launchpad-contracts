@@ -132,7 +132,7 @@ describe('IDOVault', () => {
       let blockcNumber = await ethers.provider.getBlockNumber();
       let block = await ethers.provider.getBlock(blockcNumber);
   
-      expect(unlockTime).to.equal(block.timestamp + 10); 
+      expect(unlockTime).to.gte(block.timestamp + 10); 
     }
 
     /// try unstake for locked staking
