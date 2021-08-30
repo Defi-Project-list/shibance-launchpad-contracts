@@ -14,7 +14,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
 
-  address public developer;
+  address public admin;
 
   IDOJudgement public idoJudgement;
   IDOVault public idoVault;
@@ -36,6 +36,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   uint256 public overflowTime2; // only tier 1,2,and 3 can contribute more
   uint256 public generalSaleTime; // general opening, everybody can contribute
   uint256 public distributionTime; // distribute tokens to contributors
+  address public developer; // project developer address
 
   struct User {
     // uint256 pid; // project id
@@ -70,8 +71,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     uint256 distributionTime
   );
 
-  modifier onlyDeveloper() {
-    require(msg.sender == developer, "Developer is required");
+  modifier onlyAdmin() {
+    require(msg.sender == admin, "Developer is required");
     _;
   }
 
@@ -82,7 +83,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     IERC20 _contributionToken,
     uint256 _contributionTokenDecimal,
     uint256 _totalTokens,
-    uint256 _softCaps
+    uint256 _softCaps,
+    address _devAddress
   ) {
     idoJudgement = _idoJudgement;
     idoVault = _idoVault;
@@ -92,13 +94,24 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     contributionTokenDecimal = _contributionTokenDecimal;
     totalTokens = _totalTokens;
     softCaps = _softCaps;
+    developer = _devAddress;
   }
 
   /**
-   * @notice Sets developer address
+   * @notice Sets admin
+   * @param _admin admin address
    * @dev Only callable by the contract owner.
    */
-  function setDeveloper(address _dev) external onlyOwner {
+  function setAdmin(address _admin) external onlyOwner {
+    require(_admin != address(0), "Cannot be zero address");
+    admin = _admin;
+  }
+
+  /**
+   * @notice Sets project developer address
+   * @dev Only callable by the admin
+   */
+  function setDeveloper(address _dev) external onlyAdmin {
     require(_dev != address(0), "Cannot be zero address");
     developer = _dev;
   }
@@ -134,9 +147,9 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     uint256 _generalSaleTime,
     uint256 _distributionTime
   ) external onlyOwner {
-    require(!isCanceled(), "Canceled project");
     require(totalTokens > _softCaps, "Total token amount is smaller than soft capability");
     require(_snapshotTime > block.timestamp, "Do not allow to update project");
+    require(!isCanceled(), "Canceled project");
 
     contributionToken = _contributionToken;
     contributionTokenDecimal = _contributionTokenDecimal;
@@ -171,9 +184,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    */
   function takeSnapshotAndAllocate(
     uint256[5] calldata _weights
-  ) public onlyDeveloper {
-    require(snapshotTime <= block.timestamp &&
-      block.timestamp < userContributionTime,
+  ) public onlyAdmin {
+    require(snapshotTime <= block.timestamp && block.timestamp < userContributionTime,
       "Allow to call at snapshotting time");
     
     address[] memory users = idoVault.getUsers();
@@ -208,7 +220,7 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   }
 
   function isCanceled() public view returns (bool) {
-    return distributionTime > 0 && block.timestamp > distributionTime &&
+    return distributionTime > 0 && block.timestamp >= distributionTime &&
       totalContributedAmount < softCaps;
   }
 
@@ -293,15 +305,16 @@ contract IDOProject is IDOContext, ReentrancyGuard {
   function contributeProject(
     uint256 _contributionAmount
   ) public nonReentrant {
-    require(!isCanceled(), "Canceled project");
     require(_contributionAmount >= minContributionAmount, "Need to contribute more");
+    require(block.timestamp >= userContributionTime, "Not a contribution time");
+    require(!isCanceled(), "Canceled project");
     
     uint256 tierLevel = idoJudgement.getTierLevel(msg.sender);
     require(tierLevel >= BASIC_TIER, "Only tier users can contribute");
 
     // require(active, "Inactive project");
-    require(distributionTime < block.timestamp, "Already ended contribution time");
     require(generalSaleTime > block.timestamp, "Now is general sale time");
+    require(distributionTime > block.timestamp, "Already ended contribution time");
 
     if (generalSaleTime > block.timestamp) { // general sale stage
     } else if (overflowTime2 < block.timestamp) {
@@ -343,6 +356,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
       calculateTokenAmount(totalContributedAmount.add(_contributionAmount));
     require(tokenAmount < totalTokens, "Exceed the total token amount");
 
+    contributionToken.safeTransferFrom(_addr, address(this), _contributionAmount);
+
     user.contributionAmount = user.contributionAmount.add(_contributionAmount);
     user.lastContributionTime = block.timestamp;
 
@@ -354,8 +369,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    * @return returned tokens
    */
   function returnBack() public nonReentrant returns (uint256) {
+    require(block.timestamp >= distributionTime, "Now is not distribution time");
     require(isCanceled(), "Not a canceled project");
-    require(block.timestamp < distributionTime, "Now is not distribution time");
 
     User storage user = whiteList[msg.sender];
     require(user.active, "Only for KYC user");
@@ -376,8 +391,8 @@ contract IDOProject is IDOContext, ReentrancyGuard {
    * @return claimed amount
    */
   function claimTokens() public nonReentrant returns (uint256) {
+    require(block.timestamp >= distributionTime, "Now is not distribution time");
     require(!isCanceled(), "Canceled project");
-    require(block.timestamp < distributionTime, "Now is not distribution time");
 
     User storage user = whiteList[msg.sender];
     require(user.active, "Only for KYC user");
@@ -392,6 +407,24 @@ contract IDOProject is IDOContext, ReentrancyGuard {
     user.claimed = true;
 
     return user.allocatedTokenAmount;
+  }
+
+  /**
+   * @notice settlement with new token provider
+   * @dev only callable in distribution time
+   */
+  function settlement() public onlyAdmin {
+    // check if project was contributed successfully
+    require(block.timestamp >= distributionTime, "Now is not distribution time");
+    
+    if (isCanceled()) {
+      // return back idoTokens to project developer
+      idoToken.transfer(developer, idoToken.balanceOf(address(this)));
+
+    } else {
+      // transfer contributed tokens to project developer
+      contributionToken.transfer(developer, contributionToken.balanceOf(address(this)));
+    }
   }
 
   function calculateTokenAmount(

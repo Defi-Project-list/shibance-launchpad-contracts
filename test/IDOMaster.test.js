@@ -73,13 +73,13 @@ describe('IDOMaster', () => {
     const totalSupply = await this.busd.totalSupply();
     // add project
     await this.idoMaster.addProject(
-      admin.address,
       this.paper.address,
       this.busd.address,
       0,
       10000,
-      1000
-    )
+      1000,
+      small.address,
+    );
     const idoProjectAddr = await this.idoMaster.project(1);
     const IDOProject = await ethers.getContractFactory("IDOProject");
     const idoProject = IDOProject.attach(idoProjectAddr);

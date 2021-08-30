@@ -26,7 +26,7 @@ describe('IDOProject', () => {
     this.woof = await WoofToken.deploy();
     await this.woof.deployed();
     this.busd = await BUSD.deploy("BUSD", "BUSD", 1000000);
-    this.paper = await PAPER.connect(small).deploy("PAPER", "PAPER", 1000000);
+    this.paper = await PAPER.connect(tiny).deploy("PAPER", "PAPER", 1000000);
 
     await this.woof.mint(admin.address, 1000000);
     await this.woof.mint(big.address, 1000000);
@@ -35,7 +35,8 @@ describe('IDOProject', () => {
     await this.woof.mint(dog.address, 1000000);
     await this.woof.mint(cat.address, 1000000);
 
-    await this.busd.transfer(big.address, 1000000);
+    await this.busd.transfer(big.address, 100000);
+    await this.busd.transfer(small.address, 100000);
 
     this.doggyPound = await DoggyPound.deploy(this.woof.address);
     await this.doggyPound.deployed();
@@ -73,18 +74,18 @@ describe('IDOProject', () => {
     await this.idoMaster.deployed();
     
     /// add/update project
-    await this.paper.connect(small).transfer(this.idoMaster.address, 10000);
+    await this.paper.connect(tiny).transfer(this.idoMaster.address, 10000);
 
     await this.busd.totalSupply();
     // add project
     await this.idoMaster.addProject(
-      admin.address,
       this.paper.address,
       this.busd.address,
       0,
       10000,
-      1000
-    )
+      1000,
+      tiny.address,
+    );
     const idoProjectAddr = await this.idoMaster.project(1);
     const IDOProject = await ethers.getContractFactory("IDOProject");
     this.idoProject = IDOProject.attach(idoProjectAddr);
@@ -97,21 +98,21 @@ describe('IDOProject', () => {
     let block = await ethers.provider.getBlock(blockNumber);
     let blockTimestamp = block.timestamp;
 
-    const snapshotTime = blockTimestamp + 10; // add 10 seconds
-    const userContributionTime = snapshotTime + 10; // add 10 seconds
-    const overflowTime1 = userContributionTime + 10; // add 10 seconds
-    const overflowTime2 = overflowTime1 + 10; // add 10 seconds
-    const generalSaleTime = overflowTime2 + 10; // add 10 seconds
-    const distributionTime = generalSaleTime + 10; // add 10 seconds
+    const snapshotTime = blockTimestamp + 100; // add 100 seconds
+    const userContributionTime = snapshotTime + 100; // add 100 seconds
+    const overflowTime1 = userContributionTime + 100; // add 100 seconds
+    const overflowTime2 = overflowTime1 + 100; // add 100 seconds
+    const generalSaleTime = overflowTime2 + 100; // add 100 seconds
+    const distributionTime = generalSaleTime + 100; // add 100 seconds
 
     // update project
     await this.idoMaster.updateProject(
-      1,
-      this.busd.address,
-      0,
-      100,
-      1000,
-      1,
+      1, // pid
+      this.busd.address, // contribution token
+      0, // contributionTokenDecimal
+      100, // minContributionAmount
+      1000, // softCaps
+      1, // ratePerContributionToken
       snapshotTime,
       userContributionTime,
       overflowTime1,
@@ -147,6 +148,10 @@ describe('IDOProject', () => {
     await this.woof.connect(cat).approve(this.idoVault.address, 50);
     await this.idoVault.connect(cat).stake(50, 100);
     
+    // pass to snapshot time
+    await ethers.provider.send('evm_increaseTime', [100]);
+    await ethers.provider.send('evm_mine');
+
     await this.idoProject.connect(admin).takeSnapshotAndAllocate(
       [
         2000, // 20%
@@ -156,15 +161,6 @@ describe('IDOProject', () => {
         2000  // 20%
       ]
     );
-
-    let blockNumber = await ethers.provider.getBlockNumber();
-    let block = await ethers.provider.getBlock(blockNumber);
-    let blockTimestamp = block.timestamp;
-
-    // const snapshotTime = blockTimestamp + 10; // add 10 seconds
-
-    await ethers.provider.send('evm_increaseTime', [10]);
-    await ethers.provider.send('evm_mine');
 
     let userInfo = await this.idoProject.getUserInfo(big.address);
     expect(userInfo[0]).to.equal(0); // snapshotAmount
@@ -180,5 +176,138 @@ describe('IDOProject', () => {
 
     userInfo = await this.idoProject.getUserInfo(cat.address);
     expect(userInfo[0]).to.equal(2000); // snapshotAmount
+  });
+
+  it("kyc user", async() => {
+    // stake
+    await this.woof.connect(big).approve(this.idoVault.address, 30);
+    await this.idoVault.connect(big).stake(30, 100);
+
+    // pass to contribution time
+    await ethers.provider.send('evm_increaseTime', [200]);
+    await ethers.provider.send('evm_mine');
+
+    await this.busd.connect(big).approve(this.idoProject.address, 200);
+    await expect(this.idoProject.connect(big).contributeProject(200)).
+      to.be.revertedWith('Only for KYC user');
+  });
+
+  it("contribute/returnback", async() => {
+    // stake
+    await this.woof.connect(big).approve(this.idoVault.address, 30);
+    await this.idoVault.connect(big).stake(30, 100);
+
+    // pass to snapshot time & take snapshot
+    await ethers.provider.send('evm_increaseTime', [100]);
+    await ethers.provider.send('evm_mine');
+
+    await this.idoProject.connect(admin).takeSnapshotAndAllocate(
+      [
+        2000, // 20%
+        2000, // 20%
+        2000, // 20%
+        2000, // 20%
+        2000  // 20%
+      ]
+    );
+
+    // only can contribute after contribution time
+    expect(await this.busd.balanceOf(big.address)).to.equal(100000);
+    await this.busd.connect(big).approve(this.idoProject.address, 200);
+    await expect(this.idoProject.connect(big).contributeProject(200)).
+      to.be.revertedWith('Not a contribution time');
+    expect(await this.busd.balanceOf(big.address)).to.equal(100000);
+
+    // pass to contribution time
+    await ethers.provider.send('evm_increaseTime', [100]);
+    await ethers.provider.send('evm_mine');
+
+    // contribute
+    await this.idoProject.connect(big).contributeProject(200);
+    expect(await this.busd.balanceOf(big.address)).to.equal(100000 - 200);
+    expect(await this.busd.balanceOf(this.idoProject.address)).to.equal(200);
+
+    // pass to next phase
+    await ethers.provider.send('evm_increaseTime', [100]);
+    await ethers.provider.send('evm_mine');
+
+    // only can claim or return back after distribution time
+    await expect(this.idoProject.connect(big).returnBack()).
+    to.be.revertedWith('Now is not distribution time');
+    await expect(this.idoProject.connect(big).claimTokens()).
+    to.be.revertedWith('Now is not distribution time');
+
+    // pass to distribution time
+    await ethers.provider.send('evm_increaseTime', [400]);
+    await ethers.provider.send('evm_mine');
+
+    // not complete softCaps, all contributions will be returned back
+    await expect(this.idoProject.connect(big).claimTokens()).
+    to.be.revertedWith('Canceled project');
+    await this.idoProject.connect(big).returnBack();
+    expect(await this.busd.balanceOf(big.address)).to.equal(100000);
+    expect(await this.busd.balanceOf(this.idoProject.address)).to.equal(0);
+  });
+
+  it("contribute/claim", async() => {
+    // stake
+    await this.woof.connect(big).approve(this.idoVault.address, 30);
+    await this.idoVault.connect(big).stake(30, 100);
+    await this.woof.connect(small).approve(this.idoVault.address, 40);
+    await this.idoVault.connect(small).stake(40, 100);
+
+    // pass to snapshot time & take snapshot
+    await ethers.provider.send('evm_increaseTime', [100]);
+    await ethers.provider.send('evm_mine');
+
+    await this.idoProject.connect(admin).takeSnapshotAndAllocate(
+      [
+        2000, // 20%
+        2000, // 20%
+        2000, // 20%
+        2000, // 20%
+        2000  // 20%
+      ]
+    );
+    
+    let userInfo = await this.idoProject.getUserInfo(big.address);
+    expect(userInfo[0]).to.equal(2000); // snapshotAmount
+
+    userInfo = await this.idoProject.getUserInfo(small.address);
+    expect(userInfo[0]).to.equal(2000); // snapshotAmount
+
+    // pass to contribution time
+    await ethers.provider.send('evm_increaseTime', [100]);
+    await ethers.provider.send('evm_mine');
+
+    // contribute
+    await this.busd.connect(big).approve(this.idoProject.address, 600);
+    await this.idoProject.connect(big).contributeProject(600);
+    expect(await this.busd.balanceOf(big.address)).to.equal(100000 - 600);
+    expect(await this.busd.balanceOf(this.idoProject.address)).to.equal(600);
+    await this.busd.connect(small).approve(this.idoProject.address, 400);
+    await this.idoProject.connect(small).contributeProject(400);
+    expect(await this.busd.balanceOf(small.address)).to.equal(100000 - 400);
+    expect(await this.busd.balanceOf(this.idoProject.address)).to.equal(1000);
+
+    // pass to distribution time
+    await ethers.provider.send('evm_increaseTime', [400]);
+    await ethers.provider.send('evm_mine');
+
+    // claim tokens
+    await this.idoProject.connect(big).claimTokens();
+    await expect(this.idoProject.connect(big).returnBack()).
+    to.be.revertedWith('Not a canceled project');
+    expect(await this.busd.balanceOf(this.idoProject.address)).to.equal(1000);
+    await this.idoProject.connect(small).claimTokens();
+
+    // settlement with project developer
+    await this.idoProject.connect(admin).settlement();
+    expect(await this.busd.balanceOf(this.idoProject.address)).to.equal(0);
+    expect(await this.busd.balanceOf(tiny.address)).to.equal(1000);
+
+    // maximum buyable amount is snapshotAmount, but maximum claimable amount belongs to contribution amount
+    expect(await this.paper.balanceOf(big.address)).to.equal(600);
+    expect(await this.paper.balanceOf(small.address)).to.equal(400);
   });
 })

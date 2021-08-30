@@ -116,21 +116,21 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
 
   /**
    * @notice add new IDO project
-   * @param _devAddress developer address
    * @param _idoToken new token
    * @param _contributionToken contribution token(ex. BUSD)
    * @param _contributionTokenDecimal contribution token decimal(ex. 18)
    * @param _totalTokens total amount to be going to sell
    * @param _softCaps soft capacity threshold in BUSD
+   * @param _devAddress project developer address
    * @return pid project id(= project index + 1), project
    */
   function addProject(
-    address _devAddress,
     IERC20 _idoToken,
     IERC20 _contributionToken,
     uint256 _contributionTokenDecimal,
     uint256 _totalTokens,
-    uint256 _softCaps
+    uint256 _softCaps,
+    address _devAddress
   ) external onlyAdmin returns (uint256) {
     // require(_contributionTokenDecimal > 0, "Invalid token decimal");
     require(_totalTokens >= _softCaps, "Total token amount is smaller than soft capability");
@@ -142,16 +142,16 @@ contract IDOMaster is IDOContext, ReentrancyGuard {
       _contributionToken,
       _contributionTokenDecimal,
       _totalTokens,
-      _softCaps
+      _softCaps,
+      _devAddress
     );
 
-    _idoToken.safeApprove(address(idoProject), _idoToken.balanceOf(address(this)));
     _idoToken.transfer(
       address(idoProject),
       _idoToken.balanceOf(address(this))
     );
 
-    idoProject.setDeveloper(_devAddress);
+    idoProject.setAdmin(admin);
 
     projects.push(idoProject);
 
